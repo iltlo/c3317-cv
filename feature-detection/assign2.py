@@ -21,6 +21,15 @@ def rgb2gray(img_color) :
 
     # TODO: using the Y channel of the YIQ model to perform the conversion
 
+    # [Y I Q] = [0.299 0.587 0.114; 0.596 -0.275 -0.321; 0.212 -0.528 0.311] * [R G B]'
+    # Y = 0.299 * R + 0.587 * G + 0.114 * B
+
+    img_gray = np.zeros((img_color.shape[0], img_color.shape[1]), dtype = np.float64)
+
+    for i in range(0, img_color.shape[0]):
+        for j in range(0, img_color.shape[1]):
+            img_gray[i][j] = 0.299 * img_color[i][j][0] + 0.587 * img_color[i][j][1] + 0.114 * img_color[i][j][2]
+
     return img_gray
 
 ################################################################################
@@ -35,9 +44,24 @@ def smooth1D(img, sigma) :
 
 
     # TODO: form a 1D horizontal Guassian filter of an appropriate size
+    size = int(sigma * (2* np.log(1000))**0.5)
+    x = np.arange(-size, size+1)
+    filter = np.exp((x ** 2) / -2 / (sigma ** 2))
+
 
     # TODO: convolve the 1D filter with the image;
     #       apply partial filter for the image border
+    
+    # conv with zero padding
+    img_filtered = convolve1d(img, filter, mode='constant', cval = 0.0)
+    
+    #  Normalization
+    ones = np.ones_like(img)
+    # convolve the ones with the filter
+    img_weight = convolve1d(ones, filter, mode='constant', cval = 0.0)
+
+    # divide the image by the weight
+    img_smoothed = np.divide(img_filtered, img_weight)
 
     return img_smoothed
 
@@ -51,9 +75,14 @@ def smooth2D(img, sigma) :
     # return:
     #    img_smoothed - a h x w numpy array holding the 2D smoothing result
 
-    # TODO: smooth the image along the vertical direction
+    # TODO: smooth the image along the horizontal direction
+    img = smooth1D(img, sigma)
 
     # TODO: smooth the image along the horizontal direction
+    img = smooth1D(img.T, sigma)
+    img_smoothed = img.T
+
+    # plt.imshow(np.float32(img_smoothed), cmap = 'gray')
 
     return img_smoothed
 
@@ -70,17 +99,75 @@ def harris(img, sigma, threshold) :
     #              (up to sub-pixel accuracy) and cornerness value of each corner
 
     # TODO: compute Ix & Iy
+    # gradient(I) = [Ix, Iy] -> Ix = partial(I)/partial(x), Iy = partial(I)/partial(y)
+
+    #  compute Ix and Iy (finite difference method)
+    # Ix = np.zeros((img.shape[0], img.shape[1]), dtype = np.float64)
+    # Ix = convolve1d(img, [1, 0, -1], axis = 1, mode = 'constant', cval = 0.0)
+    # Iy = np.zeros((img.shape[0], img.shape[1]), dtype = np.float64)
+    # Iy = convolve1d(img, [1, 0, -1], axis = 0, mode = 'constant', cval = 0.0)
+
+    # compute Ix and Iy using np.gradient
+    Ix = np.gradient(img, axis = 1)
+    Iy = np.gradient(img, axis = 0)
+    
 
     # TODO: compute Ix2, Iy2 and IxIy
 
+    Ix2 = Ix * Ix
+    Iy2 = Iy * Iy
+    IxIy = Ix * Iy
+
     # TODO: smooth the squared derivatives
 
+    Ix2 = smooth2D(Ix2, sigma)
+    Iy2 = smooth2D(Iy2, sigma)
+    IxIy = smooth2D(IxIy, sigma)
+
     # TODO: compute cornesness functoin R
+    R = np.zeros((img.shape[0], img.shape[1]), dtype = np.float64)
+    k = 0.04
+    #  R = lambda1 * lambda2 - k(lambda1 + lambda2)^2
+    # Note: lambda1 * lambda2 = det(H), lambda1 + lambda2 = trace(H)
+    R = Ix2 * Iy2 - IxIy ** 2 - k * (Ix2 + Iy2) ** 2
+
+    # print(f"R: {R}")
 
     # TODO: mark local maxima as corner candidates;
     #       perform quadratic approximation to local corners upto sub-pixel accuracy
+    # Note:
+    # f(x, y) = ax^2 + by^2 + cx + dy + e
+    # f(0,0) = e
+    # f(-1,0) = a - c + e
+    # f(1,0) = a + c + e
+    # f(0,-1) = b - d + e
+    # f(0,1) = b + d + e
+    corners = []
+    for i in range(1, R.shape[0] - 1):
+        for j in range(1, R.shape[1] - 1):
+            eight_neighbours = np.array([R[i - 1][j - 1], R[i - 1][j], R[i - 1][j + 1], R[i][j - 1], R[i][j + 1], R[i + 1][j - 1], R[i + 1][j], R[i + 1][j + 1]])
+            if R[i][j] > np.max(eight_neighbours):
+                # perform quadratic approximation by formula 
+                a = (R[i-1][j] + R[i+1][j] - 2 * R[i][j]) / 2
+                b = (R[i][j-1] + R[i][j+1] - 2 * R[i][j]) / 2
+                c = (R[i+1][j] - R[i-1][j]) / 2
+                d = (R[i][j+1] - R[i][j-1]) / 2
+                e = R[i][j]
+                if a != 0 and b != 0:
+                    i_subpix = i -(c / (2 * a))
+                    j_subpix = j -(d / (2 * b))
+                    r = e - (c ** 2) / (4 * a) - (d ** 2) / (4 * b)
+                    corners.append([j_subpix, i_subpix, r])
+
 
     # TODO: perform thresholding and discard weak corners
+    print(f"corners: {corners}")
+    strong_corners = []
+    for i in range(0, len(corners)):
+        if corners[i][2] > threshold:
+            strong_corners.append(corners[i])
+    
+    corners = strong_corners
 
     return sorted(corners, key = lambda corner : corner[2], reverse = True)
 
