@@ -21,10 +21,20 @@ def compose_E(RT1, RT2) :
     #    E - a 3 x 3 numpy ndarray holding the essential matrix
 
     # TODO : compute the relative rotation R
+    R1 = RT1[:, 0:3]
+    R2 = RT2[:, 0:3]
+    R = R2 @ R1.T
 
     # TODO: compute the relative translation T
+    T1 = RT1[:, 3]
+    T2 = RT2[:, 3]
+    T = T2 - R @ T1
 
     # TODO : compose E from R and T
+    T_x = np.array([[0, -T[2], T[1]], 
+                [T[2], 0, -T[0]], 
+                [-T[1], T[0], 0]])
+    E = T_x @ R
 
     return E
 
@@ -199,7 +209,7 @@ def main() :
                         help = 'filename of input image 2')
     parser.add_argument('-c2', '--cam2', type = str, default = 'grid2.cam',
                         help = 'filename of camera calibration output 2')
-    parser.add_argument('-o', '--output', type = str,
+    parser.add_argument('-o', '--output', type = str, default='E.txt',
                         help = 'filename for outputting essential matrix')
     args = parser.parse_args()
 

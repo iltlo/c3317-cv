@@ -23,13 +23,51 @@ def calibrate2D(ref3D, ref2D) :
     #    Hyz - a 3 x 3 numpy ndarray holding the planar projective transformation
     #          for the Y-Z plane
 
+    numOfCorners = ref3D.shape[0]
+    A_xz = np.zeros((numOfCorners * 2, 8), dtype=np.float64)
+    A_yz = np.zeros((numOfCorners * 2, 8), dtype=np.float64)
+    b = np.zeros((numOfCorners * 2), dtype=np.float64)
+
     # TODO : form the matrix equation Ap = b for the X-Z plane
+    # extract X Y Z from ref3D and u v from ref2D
+    X = ref3D[:, 0]
+    Y = ref3D[:, 1]
+    Z = ref3D[:, 2]
+    u = ref2D[:, 0]
+    v = ref2D[:, 1]
+
+    # fill in A
+    # Eq1: X_i * p_00 + Z_i * p_01 + p_02 - u_i * X_i * p_20 - u_i * Z_i * p_21 = u_i
+    # Eq2: X_i * p_10 + Z_i * p_11 + p_12 - v_i * X_i * p_20 - v_i * Z_i * p_21 = v_i
+    # Reference: L7 slide 24
+    for i in range(numOfCorners//2):    # half of the corners are on the X-Z plane
+        A_xz[2*i, :] = [X[i], Z[i], 1, 0, 0, 0, -u[i]*X[i], -u[i]*Z[i]]    # Eq1
+        b[2*i] = u[i]
+        A_xz[2*i+1, :] = [0, 0, 0, X[i], Z[i], 1, -v[i]*X[i], -v[i]*Z[i]]  # Eq2
+        b[2*i+1] = v[i]
 
     # TODO : solve for the planar projective transformation using linear least squares
+    p = np.linalg.lstsq(A_xz, b, rcond=None)[0]
+    # set p_22 to 1 (overall scale)
+    p = np.append(p, 1)
+    Hxz = p.reshape(3, 3)
 
     # TODO : form the matrix equation Ap = b for the Y-Z plane
+    # fill in A
+    # Eq1: Y_i * p_00 + Z_i * p_01 + p_02 - u_i * Y_i * p_20 - u_i * Z_i * p_21 = u_i
+    # Eq2: Y_i * p_10 + Z_i * p_11 + p_12 - v_i * Y_i * p_20 - v_i * Z_i * p_21 = v_i
+    for i in range(numOfCorners//2, numOfCorners):    # half of the corners are on the Y-Z plane
+        # i takes values from 4 to 7
+        A_yz[2*i, :] = [Y[i], Z[i], 1, 0, 0, 0, -u[i]*Y[i], -u[i]*Z[i]]    # Eq1
+        b[2*i] = u[i]
+        A_yz[2*i+1, :] = [0, 0, 0, Y[i], Z[i], 1, -v[i]*Y[i], -v[i]*Z[i]]  # Eq2
+        b[2*i+1] = v[i]
 
     # TODO : solve for the planar projective transformation using linear least squares
+    p = np.linalg.lstsq(A_yz, b, rcond=None)[0]
+    # set p_22 to 1 (overall scale)
+    p = np.append(p, 1)
+    Hyz = p.reshape(3, 3)
 
     return Hxz, Hyz
 
@@ -52,11 +90,54 @@ def gen_correspondences(Hxz, Hyz, corners) :
 
     # TODO : define 3D coordinates of all the corners on the 2 calibration planes
 
+
+    cornersXZ_3d = np.ones((80, 3), dtype=np.float64)
+    cornersYZ_3d = np.ones((80, 3), dtype=np.float64)
+    # calculate the 3D coordinates of the corners on the X-Y calibaration plane
+    cornersXZ_3d[:, 0] = np.repeat(np.arange(10) + 0.5, 8)  # X coordinates for X-Y plane
+    cornersXZ_3d[:, 1] = np.tile(np.arange(8) + 0.5, 10)    # Y coordinates for X-Y plane
+    # calculate the 3D coordinates of the corners on the X-Z calibaration plane
+    cornersYZ_3d[:, 0] = np.repeat(np.arange(10) + 0.5, 8)  # X coordinates for X-Z plane
+    cornersYZ_3d[:, 1] = np.tile(np.arange(8) + 0.5, 10)    # Z coordinates for X-Z plane
+
     # TODO : project corners on the calibration plane 1 onto the image
+    cornersCalibXZ_3d = []
+    cornersCalibXZ_2d = []
+    for i in range(cornersXZ_3d.shape[0]):
+        if (cornersXZ_3d[i][0] > 0 and cornersXZ_3d[i][0] <= 10
+                and cornersXZ_3d[i][1] > 0 and cornersXZ_3d[i][1] <= 8):
+            cornersCalibXZ_3d.append(cornersXZ_3d[i][0:2])    # [X, Z]
+            homogXZ_2d = np.dot(Hxz, cornersXZ_3d[i])
+            homogXZ_2d = homogXZ_2d / homogXZ_2d[2]    # normalize to get [u, v, 1]
+            cornersCalibXZ_2d.append(homogXZ_2d[0:2])         # [u, v]
+
+    # convert back to numpy array
+    cornersCalibXZ_3d = np.array(cornersCalibXZ_3d)
+    # add column of 0s (Y) to cornersCalibXZ_3d
+    cornersCalibXZ_3d = np.insert(cornersCalibXZ_3d, 1, 0, axis=1)
+    cornersCalibXZ_2d = np.array(cornersCalibXZ_2d)
 
     # TODO : project corners on the calibration plane 2 onto the image
+    cornersCalibYZ_3d = []
+    cornersCalibYZ_2d = []
+    for i in range(cornersYZ_3d.shape[0]):
+        if (cornersYZ_3d[i][0] > 0 and cornersYZ_3d[i][0] <= 10
+                and cornersYZ_3d[i][1] > 0 and cornersYZ_3d[i][1] <= 8):
+            cornersCalibYZ_3d.append(cornersYZ_3d[i][0:2])  # [Y, Z]
+            homogYZ_2d = np.dot(Hyz, cornersYZ_3d[i])
+            homogXZ_2d = homogYZ_2d / homogYZ_2d[2]
+            cornersCalibYZ_2d.append(homogXZ_2d[0:2])       # [u, v]
+
+    # convert back to numpy array
+    cornersCalibYZ_3d = np.array(cornersCalibYZ_3d)
+    # add column of 0s (X) to cornersCalibYZ_3d
+    cornersCalibYZ_3d = np.insert(cornersCalibYZ_3d, 0, 0, axis=1)
+    cornersCalibYZ_2d = np.array(cornersCalibYZ_2d)
 
     # TODO : locate the nearest detected corners
+    ref3D = np.concatenate((cornersCalibXZ_3d, cornersCalibYZ_3d), axis=0)
+    # find the nearest corner for each ref2D point
+    ref2D = find_nearest_corner(np.concatenate((cornersCalibXZ_2d, cornersCalibYZ_2d), axis=0), corners)
 
     return ref3D, ref2D
 
@@ -72,9 +153,32 @@ def calibrate3D(ref3D, ref2D) :
     # output:
     #    P - a 3 x 4 numpy ndarray holding the camera projection matrix
 
+    numOfCorners = ref3D.shape[0]
+    A = np.zeros((numOfCorners * 2, 11), dtype=np.float64)
+    b = np.zeros((numOfCorners * 2), dtype=np.float64)
+
     # TODO : form the matrix equation Ap = b for the camera
+    # extract X Y Z from ref3D and u v from ref2D
+    X = ref3D[:, 0]
+    Y = ref3D[:, 1]
+    Z = ref3D[:, 2]
+    u = ref2D[:, 0]
+    v = ref2D[:, 1]
+
+    # fill in A
+    # Eq1: X_i * p_00 + Y_i * p_01 + Z_i * p_02 + p_03 - u_i * X_i * p_20 - u_i * Y_i * p_21 - u_i * Z_i * p_22 = u_i
+    # Eq2: X_i * p_10 + Y_i * p_11 + Z_i * p_12 + p_13 - v_i * X_i * p_20 - v_i * Y_i * p_21 - v_i * Z_i * p_22 = v_i
+    # Reference: L7 slide 6
+    for i in range(numOfCorners):
+        A[2*i, :] = [X[i], Y[i], Z[i], 1, 0, 0, 0, 0, -u[i]*X[i], -u[i]*Y[i], -u[i]*Z[i]]
+        A[2*i+1, :] = [0, 0, 0, 0, X[i], Y[i], Z[i], 1, -v[i]*X[i], -v[i]*Y[i], -v[i]*Z[i]]
+        b[2*i] = u[i]
+        b[2*i+1] = v[i]
 
     # TODO : solve for the projection matrix using linear least squares
+    p = np.linalg.lstsq(A, b, rcond=None)[0]
+    p = np.append(p, 1)
+    P = p.reshape(3, 4)
 
     return P
 
@@ -88,17 +192,41 @@ def decompose_P(P) :
     #    K - a 3 x 3 numpy ndarry holding the K matrix
     #    RT - a 3 x 4 numpy ndarray holding the rigid body transformation
 
+    # Reference: L7 slide 19
+
     # TODO: extract the 3 x 3 submatrix from the first 3 columns of P
+    P_sub = P[:, 0:3]
 
     # TODO : perform QR decomposition on the inverse of [P0 P1 P2]
+    q, r = np.linalg.qr(inv(P_sub))
 
     # TODO : obtain K as the inverse of R
+    K = inv(r)
 
     # TODO : obtain R as the tranpose of Q
+    R = q.T
 
     # TODO : normalize K
+    # if k_22 is not 1, divide the whole matrix by k_22
+    # if k_00 is negative, multiply 1st column and 1st row of R by -1
+    # if k_11 is negative, multiply 2nd column and 2nd row of R by -1
+    alpha = K[2, 2]
+    K = K / alpha
+    if K[0, 0] < 0:
+        K[:, 0] = -1 * K[:, 0]
+        R[0, :] = -1 * R[0, :]
+    if K[1, 1] < 0:
+        K[:, 1] = -1 * K[:, 1]
+        R[1, :] = -1 * R[1, :]
 
     # TODO : obtain T from P3
+    # Formula: T = 1/alpha K^-1 P3
+    P3 = P[:, 3]
+    T = (1/alpha) * np.dot(np.linalg.inv(K), P3)
+
+    # combine R and T to form RT
+    T = T.reshape(3, 1)
+    RT = np.hstack((R, T))
 
     return K, RT
 
@@ -368,7 +496,7 @@ def main() :
                         help = 'filename of input image')
     parser.add_argument('-c', '--corners', type = str, default = 'grid1.crn',
                         help = 'filename of corner detection output')
-    parser.add_argument('-o', '--output', type = str,
+    parser.add_argument('-o', '--output', type = str, default='grid1.cam',
                         help = 'filename for outputting camera calibration result')
     args = parser.parse_args()
 
