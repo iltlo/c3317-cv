@@ -25,8 +25,3 @@ This program performs Harris corner detection on an input image using Python. Th
 ### 6. Command Line Interface:
    - Supports command-line arguments for specifying input image file, sigma value for Gaussian filter, threshold value for corner detection, and output file for saving corner detection results.
 
-## Usage:
-To run the program, execute the script "corner_detection.py" with the following command-line arguments:
-
-```bash
-python corner_detection.py -i <input_image_file> -s <sigma_value> -t <threshold_value> -o <output_file>
